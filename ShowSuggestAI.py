@@ -11,8 +11,7 @@ def match_shows(user_input, available_shows):
     available_shows = data['Title'].tolist()
     matched = []
     for show in user_input:
-        match = process.extractOne(show, available_shows)
-        print(f"Input: {show}, Match: {match}")  
+        match = process.extractOne(show, available_shows)  
         if match and match[1] >= 80:  
             matched.append(match[0])
     return matched
@@ -24,6 +23,7 @@ def generate_embeddings(tvshows_file="imdb_tvshows - imdb_tvshows.csv", output_f
         print(f"Embeddings file found at {pickle_file}. Loading embeddings...")
         with open(pickle_file, 'rb') as f:
             embeddings = pickle.load(f)
+        print(f"Total TV shows in embeddings: {len(embeddings)}")
         return embeddings
     
     openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -74,7 +74,66 @@ def find_closest_shows(average_vector, embeddings, top_n=5):
         similarities.append((title, similarity))
 
     similarities.sort(key=lambda x: x[1], reverse=True)
-    return similarities[:top_n]
+    max_similarity = similarities[0][1] if similarities else 1
+    results_with_percentages = [
+        (title, similarity, (similarity / max_similarity) * 100)
+        for title, similarity in similarities
+    ]
+    return results_with_percentages[:top_n]
+
+def main():
+    print("Welcome to the TV Show Recommendation System!")
+    embeddings = generate_embeddings()
+    while True:
+        user_input = input(
+            "Which TV shows did you really like watching? Separate them by a '/'.\n"
+            "Make sure to enter more than 1 show: "
+        ).strip()
+        
+        if not user_input:
+            print("Please enter at least two TV shows.")
+            continue
+
+        user_shows = [show.strip() for show in user_input.split("/") if show.strip()]
+        if len(user_shows) < 2:
+            print("Please enter more than 1 show.")
+            continue
+
+        matched_shows = match_shows(user_shows, available_shows=None)
+        if not matched_shows:
+            print("Sorry, no matches found for the TV shows you entered. Try again.")
+            continue
+
+        matched_shows_str = " / ".join(matched_shows)
+        confirmation = input(
+            f"Making sure, do you mean {matched_shows_str}? (y/n): "
+        ).strip().lower()
+
+        if confirmation != "y":
+            print("Sorry about that. Let's try again. Please make sure to write the names of the TV shows correctly.")
+            continue
+
+        print("Great! Generating recommendations now…")
+
+        avg_vector = average_vector(matched_shows, embeddings)
+        if avg_vector is None:
+            print("Sorry, we couldn't find embeddings for the shows you entered. Try again.")
+            continue
+
+        recommendations = find_closest_shows(avg_vector, embeddings, top_n=10)
+        filtered_recommendations = [
+            (title, similarity, percentage)
+            for title, similarity, percentage in recommendations if title not in matched_shows
+        ][:5]
+
+        print("Here are the TV shows that I think you would love:")
+        for title, _, percentage in filtered_recommendations:
+            print(f"- {title}: {percentage:.2f}% match")
+        break
+
+if __name__ == "__main__":
+    main()
+
 
 
 
