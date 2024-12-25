@@ -4,6 +4,7 @@ import os
 import openai
 import pickle
 import numpy as np
+from scipy.spatial.distance import cosine
 
 def match_shows(user_input, available_shows):
     data = pd.read_csv("imdb_tvshows - imdb_tvshows.csv")
@@ -64,5 +65,17 @@ def average_vector(matched_shows, embeddings):
         print("No embeddings found for matched shows.")
         return None
     return np.mean(vectors, axis=0)
+
+
+def find_closest_shows(average_vector, embeddings, top_n=5):
+    similarities = []
+    for title, vector in embeddings.items():
+        similarity = 1 - cosine(average_vector, vector)  
+        similarities.append((title, similarity))
+
+    similarities.sort(key=lambda x: x[1], reverse=True)
+    return similarities[:top_n]
+
+
 
 
