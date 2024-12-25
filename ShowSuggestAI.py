@@ -3,6 +3,7 @@ import pandas as pd
 import os
 import openai
 import pickle
+import numpy as np
 
 def match_shows(user_input, available_shows):
     data = pd.read_csv("imdb_tvshows - imdb_tvshows.csv")
@@ -50,4 +51,18 @@ def generate_embeddings(tvshows_file="imdb_tvshows - imdb_tvshows.csv", output_f
 
     print(f"Embeddings successfully saved to {pickle_file}")
     return embeddings
+
+
+def average_vector(matched_shows, embeddings):
+    vectors = []
+    for show in matched_shows:
+        if show in embeddings:
+            vectors.append(np.array(embeddings[show]))
+        else:
+            print(f"Warning: Embedding not found for '{show}'")
+    if not vectors:
+        print("No embeddings found for matched shows.")
+        return None
+    return np.mean(vectors, axis=0)
+
 
