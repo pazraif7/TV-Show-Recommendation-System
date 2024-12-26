@@ -5,6 +5,9 @@ import openai
 import pickle
 import numpy as np
 from scipy.spatial.distance import cosine
+import requests
+import time
+from PIL import Image
 
 def match_shows(user_input, available_shows):
     data = pd.read_csv("imdb_tvshows - imdb_tvshows.csv")
@@ -81,7 +84,89 @@ def find_closest_shows(average_vector, embeddings, top_n=5, boost=0.2):
         normalized_similarity = (similarity - min_similarity) / (max_similarity - min_similarity)
         percentage = min(100, round(100 * (normalized_similarity + boost)))
         results_with_percentages.append((title, similarity, percentage))
-    return results_with_percentages[:top_n]    
+    return results_with_percentages[:top_n] 
+
+def generate_show_name(base_shows, is_input_based):
+    word_bank = ["Chronicles", "Tales", "Legacy", "Secrets", "Mystery", "Adventures"]
+    base = base_shows[0].split()[0] if base_shows else "Mystery"
+    suffix = word_bank[hash(str(base_shows)) % len(word_bank)]
+    return f"The {base} {suffix}"
+
+def generate_show_description(base_shows, is_input_based):
+    if is_input_based:
+        return f"A thrilling series that combines elements of {' and '.join(base_shows[:2])} into an original storyline"
+    return f"A unique show that builds upon the themes of {base_shows[0]}, taking viewers on an unexpected journey"
+
+
+def generate_lightx_image(show_name, show_description, output_file):
+    try:
+        api_key = os.getenv("LIGHTX_API_KEY")
+        if not api_key:
+            raise EnvironmentError("LIGHTX_API_KEY not found. Set it as an environment variable.")
+        url = 'https://api.lightxeditor.com/external/api/v1/text2image'
+        headers = {
+            'Content-Type': 'application/json',
+            'x-api-key': api_key
+        }
+        data = {
+            "textPrompt": f'{show_description}',
+            'n': 1,
+            'size': '1024x1024'
+        }
+        response = requests.post(url, headers=headers, json=data)
+        response.raise_for_status()
+        data = response.json()
+
+        if data["statusCode"] == 2000 and data["body"]["status"] == "init":
+            order_id = data["body"]["orderId"]
+            print(f"Request initiated successfully. Order ID: {order_id}")
+            payload = {
+                "orderId": f'{order_id}'
+            }
+            url2 = 'https://api.lightxeditor.com/external/api/v1/order-status'
+            max_retries = data["body"].get("maxRetriesAllowed", 5)
+            avg_response_time = data["body"].get("avgResponseTimeInSec", 2)
+            for _ in range(max_retries):
+                time.sleep(avg_response_time)  # Wait between retries
+                status_response = requests.post(
+                    url2,
+                    headers=headers,
+                    json=payload
+                )
+                status_response.raise_for_status()
+                data_response = status_response.json()
+                status = data_response["body"]["status"]
+                if status == "active":
+                    print("Image generation completed.")
+                    image_url = data_response["body"]["output"]
+                    img_data = requests.get(image_url).content
+                    with open(output_file, 'wb') as f:
+                        f.write(img_data)
+                    return
+                elif status == "failed":
+                    raise Exception("Image generation failed.")
+            raise TimeoutError("Image generation timed out.")
+        else:
+            raise Exception(f"Unexpected response: {data}")
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error generating image: {e}")
+        return None
+    
+def create_custom_shows(matched_shows, filtered_recommendations):
+    show1name = generate_show_name(matched_shows, is_input_based=True)
+    show1description = generate_show_description(matched_shows, is_input_based=True)
+    recommended_titles = [rec[0] for rec in filtered_recommendations]
+    show2name = generate_show_name(recommended_titles, is_input_based=False)
+    show2description = generate_show_description(recommended_titles, is_input_based=False)
+    generate_lightx_image(show1name, show1description, "show1.png")
+    generate_lightx_image(show2name, show2description, "show2.png")
+    print("I have also created just for you two shows which I think you would love.")
+    print(f"Show #1 is based on the fact that you loved the input shows that you gave me. Its name is {show1name} and it is about {show1description}.")
+    print(f"Show #2 is based on the shows that I recommended for you. Its name is {show2name} and it is about {show2description}.")
+    print("Here are also the 2 tv show ads. Hope you like them!")
+    Image.open("show1.png").show()
+    Image.open("show2.png").show()
 
 def main():
     print("Welcome to the TV Show Recommendation System!")
@@ -130,8 +215,12 @@ def main():
 
         print("Here are the TV shows that I think you would love:")
         for title, _, percentage in filtered_recommendations:
-            print(f"- {title}: {percentage:.2f}% match")
+            print(f"- {title}: {percentage:.2f}% match") 
+
+        create_custom_shows(matched_shows, filtered_recommendations)
+    
         break
+       
 
 if __name__ == "__main__":
     main()
