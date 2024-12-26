@@ -67,7 +67,7 @@ def average_vector(matched_shows, embeddings):
     return np.mean(vectors, axis=0)
 
 
-def find_closest_shows(average_vector, embeddings, top_n=5):
+def find_closest_shows(average_vector, embeddings, top_n=5, boost=0.2):
     similarities = []
     for title, vector in embeddings.items():
         similarity = 1 - cosine(average_vector, vector)  
@@ -75,11 +75,13 @@ def find_closest_shows(average_vector, embeddings, top_n=5):
 
     similarities.sort(key=lambda x: x[1], reverse=True)
     max_similarity = similarities[0][1] if similarities else 1
-    results_with_percentages = [
-        (title, similarity, (similarity / max_similarity) * 100)
-        for title, similarity in similarities
-    ]
-    return results_with_percentages[:top_n]
+    min_similarity = min(similarities, key=lambda x: x[1])[1] if similarities else 0
+    results_with_percentages = []
+    for title, similarity in similarities:
+        normalized_similarity = (similarity - min_similarity) / (max_similarity - min_similarity)
+        percentage = min(100, round(100 * (normalized_similarity + boost)))
+        results_with_percentages.append((title, similarity, percentage))
+    return results_with_percentages[:top_n]    
 
 def main():
     print("Welcome to the TV Show Recommendation System!")
