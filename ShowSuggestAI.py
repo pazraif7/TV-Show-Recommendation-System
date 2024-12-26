@@ -4,10 +4,10 @@ import os
 import openai
 import pickle
 import numpy as np
-from scipy.spatial.distance import cosine
 import requests
 import time
 from PIL import Image
+from usearch.index import Index
 
 def match_shows(user_input, available_shows):
     data = pd.read_csv("imdb_tvshows - imdb_tvshows.csv")
@@ -69,22 +69,21 @@ def average_vector(matched_shows, embeddings):
         return None
     return np.mean(vectors, axis=0)
 
-
-def find_closest_shows(average_vector, embeddings, top_n=5, boost=0.2):
-    similarities = []
-    for title, vector in embeddings.items():
-        similarity = 1 - cosine(average_vector, vector)  
-        similarities.append((title, similarity))
-
-    similarities.sort(key=lambda x: x[1], reverse=True)
-    max_similarity = similarities[0][1] if similarities else 1
-    min_similarity = min(similarities, key=lambda x: x[1])[1] if similarities else 0
+def find_closest_shows(average_vector, embeddings, top_n=5):
+    titles = list(embeddings.keys())
+    vectors = np.array(list(embeddings.values())).astype('float32')
+    dim = vectors.shape[1]
+    index = Index(ndim=dim)
+    for idx, vector in enumerate(vectors):
+        index.add(idx, vector)
+    matches = index.search(average_vector, top_n)
     results_with_percentages = []
-    for title, similarity in similarities:
-        normalized_similarity = (similarity - min_similarity) / (max_similarity - min_similarity)
-        percentage = min(100, round(100 * (normalized_similarity + boost)))
+    for match in matches:
+        title = titles[match.key]
+        similarity = 1 - match.distance  
+        percentage = min(100, round(similarity * 100))
         results_with_percentages.append((title, similarity, percentage))
-    return results_with_percentages[:top_n] 
+    return results_with_percentages
 
 def generate_show_name(base_shows, is_input_based):
     word_bank = ["Chronicles", "Tales", "Legacy", "Secrets", "Mystery", "Adventures"]
